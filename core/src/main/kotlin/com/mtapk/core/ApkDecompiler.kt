@@ -30,6 +30,8 @@ class ApkDecompiler {
             throw ApkDecompileException("APK file not found: ${apkFile.path}")
         }
 
+        AndroidEnvironmentShims.ensure(frameworkHomeFallbackDir())
+
         val config = Config(LIB_VERSION)
         config.isForced = options.forceOverwrite
         config.jobs = options.jobs
@@ -53,8 +55,14 @@ class ApkDecompiler {
                 e
             )
         } catch (e: Throwable) {
-            throw ApkDecompileException("Failed to decode APK: ${e.message}", e)
+            val detail = e.message ?: e.cause?.message ?: e::class.qualifiedName ?: "unknown error"
+            throw ApkDecompileException("Failed to decode APK: $detail", e)
         }
+    }
+
+    private fun frameworkHomeFallbackDir(): File {
+        val tmp = System.getProperty("java.io.tmpdir")
+        return File(tmp ?: ".", "mtapk-apktool-home")
     }
 
     companion object {
