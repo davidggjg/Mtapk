@@ -22,10 +22,13 @@ import java.io.File
 internal object AndroidEnvironmentShims {
 
     fun ensure(frameworkHomeDir: File) {
-        if (System.getProperty("sun.arch.data.model") == null) {
+        if (System.getProperty("sun.arch.data.model").isNullOrEmpty()) {
             System.setProperty("sun.arch.data.model", "64")
         }
-        if (System.getProperty("user.home") == null) {
+        // Some Android builds return "" here rather than null, which still
+        // slips past a plain null check and produces a bogus relative path
+        // (".local/share/apktool/framework") that mkdirs() then fails on.
+        if (System.getProperty("user.home").isNullOrEmpty()) {
             frameworkHomeDir.mkdirs()
             System.setProperty("user.home", frameworkHomeDir.absolutePath)
         }

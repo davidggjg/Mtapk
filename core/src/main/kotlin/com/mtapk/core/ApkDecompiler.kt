@@ -30,11 +30,18 @@ class ApkDecompiler {
             throw ApkDecompileException("APK file not found: ${apkFile.path}")
         }
 
-        AndroidEnvironmentShims.ensure(frameworkHomeFallbackDir())
+        val frameworkDir = frameworkHomeFallbackDir()
+        AndroidEnvironmentShims.ensure(frameworkDir)
 
         val config = Config(LIB_VERSION)
         config.isForced = options.forceOverwrite
         config.jobs = options.jobs
+        // Belt and suspenders on top of AndroidEnvironmentShims: this makes
+        // Framework.getDirectory() use this path directly instead of
+        // re-deriving one from the (unreliable across Android versions/OEMs)
+        // "user.home" system property.
+        frameworkDir.mkdirs()
+        config.frameworkDirectory = frameworkDir.absolutePath
         config.setDecodeSources(
             if (options.decodeSourcesFull) Config.DecodeSources.FULL else Config.DecodeSources.NONE
         )

@@ -31,6 +31,28 @@ class AndroidEnvironmentShimsTest {
     }
 
     @Test
+    fun `treats an empty string the same as missing`() {
+        // Observed on a real device: user.home comes back as "" rather than
+        // null, which a plain null-check misses - Paths.get("", ...) doesn't
+        // throw, it just silently produces a bogus relative path.
+        val originalArch = System.getProperty("sun.arch.data.model")
+        val originalHome = System.getProperty("user.home")
+        try {
+            System.setProperty("sun.arch.data.model", "")
+            System.setProperty("user.home", "")
+
+            val fallbackDir = File(createTempDirectory("mtapk-shims-test-empty").toFile(), "apktool-home")
+            AndroidEnvironmentShims.ensure(fallbackDir)
+
+            assertEquals("64", System.getProperty("sun.arch.data.model"))
+            assertEquals(fallbackDir.absolutePath, System.getProperty("user.home"))
+        } finally {
+            restoreOrClear("sun.arch.data.model", originalArch)
+            restoreOrClear("user.home", originalHome)
+        }
+    }
+
+    @Test
     fun `does not override an existing value`() {
         val originalArch = System.getProperty("sun.arch.data.model")
         val originalHome = System.getProperty("user.home")
