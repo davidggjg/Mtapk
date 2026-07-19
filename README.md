@@ -25,6 +25,62 @@ recompile smali back to dex / resources back to a signed, installable APK —
 that's a separate, much riskier feature (recompilation + signing) that wasn't
 part of the request.
 
+## Running apktool-lib on Android (the two non-obvious fixes)
+
+apktool-lib is built for a desktop JVM, and two things about that broke on
+real Android devices when this was actually tested end to end:
+
+1. **Missing desktop-JVM system properties.** `brut.util.OSDetection` and
+   `brut.androlib.res.Framework` read `sun.arch.data.model` and `user.home`
+   in static initializers with no null/empty check. Neither is reliably
+   present on Android (and `user.home` was observed to come back as `""`
+   rather than `null` on a real device, which a naive null-check misses).
+   `core`'s `ApkDecompiler`/`AndroidEnvironmentShims` fills both in (only if
+   actually missing) before touching any apktool-lib class, and also points
+   `Config.frameworkDirectory` at a known-good absolute path directly rather
+   than letting the library derive one.
+
+2. **Nine-patch decoding needs AWT, which doesn't exist on Android at all.**
+   `ResNinePatchStreamDecoder` uses `javax.imageio.ImageIO` /
+   `java.awt.image.BufferedImage` to draw the human-editable border onto a
+   decoded `.9.png`. Android's runtime has no ImageIO implementation
+   whatsoever (`NoClassDefFoundError: Failed resolution of:
+   Ljavax/imageio/ImageIO;`), and since that's an `Error` rather than an
+   `AndrolibException`, it isn't caught by apktool-lib's own per-file
+   fallback and aborts decoding the *entire* APK - meaning virtually any
+   real-world app (nine-patches are near-universal for custom
+   buttons/backgrounds) would fail outright.
+
+   Fixed by removing just that one class from the dependency and providing
+   an Android-native replacement:
+   - `app/libs/apktool-lib-3.0.2-ninepatch-patched.jar` - the real
+     `org.apktool:apktool-lib:3.0.2` jar with only
+     `brut/androlib/res/decoder/ResNinePatchStreamDecoder.class` deleted
+     (97 of the original 98 entries; everything else byte-identical).
+   - `app/build.gradle.kts` excludes the Maven `org.apktool:apktool-lib`
+     coordinate from the `:core` dependency (since excluding a module also
+     drops everything only reachable through it) and re-declares its own
+     direct dependencies explicitly (`brut.j.*`, the JitPack smali/baksmali
+     coordinates, guava, commons-io, commons-text) so the rest of the
+     module still resolves normally, then adds the patched jar back.
+   - `app/src/main/kotlin/brut/androlib/res/decoder/ResNinePatchStreamDecoder.kt`
+     fills the gap: same package/class/interface as the original, but a
+     plain byte-for-byte copy (matching apktool-lib's own
+     `ResRawStreamDecoder`, used for unknown file types) instead of AWT
+     rendering. The decoded `.9.png` is a valid, correct, viewable PNG - it
+     just won't have apktool's debug border pixels baked in, which is a
+     reasonable trade-off given this app doesn't do apktool-style rebuilds
+     anyway (see above).
+
+   `core`'s own dependency on apktool-lib is untouched (the real jar, AWT
+   and all) since its JVM test suite runs on a real desktop JVM where AWT
+   works fine - only `app`'s Android build needs the patched version.
+
+   Verified concretely: `strings` over every `.dex` in the built debug APK
+   shows zero occurrences of `javax/imageio` or `java/awt/image` anywhere,
+   and the replacement class (`ResNinePatchStreamDecoder.kt` as its debug
+   source marker) is present under `brut/androlib/res/decoder/`.
+
 ## Project layout
 
 - `core/` — plain Kotlin/JVM module with no Android dependency: wraps

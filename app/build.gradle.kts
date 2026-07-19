@@ -47,7 +47,29 @@ android {
 }
 
 dependencies {
-    implementation(project(":core"))
+    // apktool-lib's nine-patch decoder uses javax.imageio/java.awt.image, which
+    // don't exist on Android's runtime at all (NoClassDefFoundError as soon as a
+    // 9-patch resource is decoded - practically guaranteed in any real app). The
+    // original org.apktool:apktool-lib jar is excluded here and replaced with a
+    // locally patched copy (app/libs/, built by stripping just that one class -
+    // see README) plus its own direct dependencies re-declared explicitly so the
+    // rest of the module (everything actually used) still resolves normally; this
+    // app's own brut.androlib.res.decoder.ResNinePatchStreamDecoder (in
+    // src/main/kotlin) fills the gap with a raw-copy implementation.
+    implementation(project(":core")) {
+        exclude(group = "org.apktool", module = "apktool-lib")
+    }
+    implementation(files("libs/apktool-lib-3.0.2-ninepatch-patched.jar"))
+    implementation("org.apktool:brut.j.common:3.0.2")
+    implementation("org.apktool:brut.j.util:3.0.2")
+    implementation("org.apktool:brut.j.dir:3.0.2")
+    implementation("org.apktool:brut.j.xml:3.0.2")
+    implementation("org.apktool:brut.j.yaml:3.0.2")
+    implementation("com.github.iBotPeaches.smali:smali-baksmali:b6365a84f4")
+    implementation("com.github.iBotPeaches.smali:smali:b6365a84f4")
+    implementation("com.google.guava:guava:33.5.0-jre")
+    implementation("commons-io:commons-io:2.21.0")
+    implementation("org.apache.commons:commons-text:1.15.0")
 
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
