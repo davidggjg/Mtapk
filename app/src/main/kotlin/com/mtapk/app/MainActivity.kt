@@ -117,7 +117,9 @@ private fun MtapkApp(viewModel: MainViewModel = viewModel()) {
                 HomeScreen(
                     isLoading = state is DecompileState.Loading,
                     errorMessage = (state as? DecompileState.Error)?.message,
-                    onPickApkClick = { pickApkLauncher.launch(arrayOf("*/*")) }
+                    onPickApkClick = { pickApkLauncher.launch(arrayOf("*/*")) },
+                    crashLog = viewModel.lastCrashLog,
+                    onDismissCrashLog = viewModel::dismissCrashLog
                 )
             }
         }

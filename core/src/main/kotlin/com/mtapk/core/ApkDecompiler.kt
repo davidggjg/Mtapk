@@ -9,7 +9,11 @@ data class DecodeOptions(
     val decodeSourcesFull: Boolean = true,
     val decodeAssets: Boolean = true,
     val forceOverwrite: Boolean = true,
-    val jobs: Int = Runtime.getRuntime().availableProcessors().coerceIn(1, 4)
+    // Kept at 1 deliberately: apktool-lib was built for desktop use and each
+    // parallel decode job holds its own dex/resource model in memory, which
+    // adds up fast against a phone's much smaller per-app heap. Sequential
+    // decoding is slower but far less likely to OOM.
+    val jobs: Int = 1
 )
 
 class ApkDecompileException(message: String, cause: Throwable? = null) : Exception(message, cause)
@@ -41,7 +45,14 @@ class ApkDecompiler {
 
         try {
             ApkDecoder(apkFile, config).decode(outputDir)
-        } catch (e: Exception) {
+        } catch (e: OutOfMemoryError) {
+            // Not an Exception, so it would otherwise skip straight past any
+            // catch(Exception) up the call chain and take the whole app down.
+            throw ApkDecompileException(
+                "אין מספיק זיכרון על המכשיר כדי לפרק את קובץ ה-APK הזה",
+                e
+            )
+        } catch (e: Throwable) {
             throw ApkDecompileException("Failed to decode APK: ${e.message}", e)
         }
     }

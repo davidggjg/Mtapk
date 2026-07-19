@@ -59,6 +59,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var editorError by mutableStateOf<String?>(null)
         private set
 
+    var lastCrashLog by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        lastCrashLog = getApplication<Application>().readLastCrashLog()
+    }
+
+    fun dismissCrashLog() {
+        getApplication<Application>().clearLastCrashLog()
+        lastCrashLog = null
+    }
+
     val currentDir: File? get() = pathStack.lastOrNull()
 
     val suggestedZipName: String
@@ -90,8 +102,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 decompileState = DecompileState.Success(outDir, displayName)
             } catch (e: ApkDecompileException) {
                 decompileState = DecompileState.Error(e.message ?: "פירוק הקובץ נכשל")
-            } catch (e: Exception) {
-                decompileState = DecompileState.Error(e.message ?: "שגיאה לא צפויה")
+            } catch (e: Throwable) {
+                // Catches everything, including OutOfMemoryError and friends: an
+                // uncaught Throwable here would otherwise crash the whole app
+                // instead of showing an error screen.
+                context.logCrash("pickApk", e)
+                decompileState = DecompileState.Error(e.message ?: "שגיאה לא צפויה (${e::class.simpleName})")
             }
         }
     }
@@ -120,14 +136,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val context = getApplication<Application>()
         viewModelScope.launch {
             editorError = null
-            if (!TextFileClassifier.isLikelyText(entry.file)) {
-                editorError = "קובץ בינארי - לא ניתן לערוך כטקסט"
-                return@launch
+            try {
+                if (!TextFileClassifier.isLikelyText(entry.file)) {
+                    editorError = "קובץ בינארי - לא ניתן לערוך כטקסט"
+                    return@launch
+                }
+                val text = withContext(Dispatchers.IO) { entry.file.readText() }
+                openedFile = entry.file
+                editorText = text
+                editorDirty = false
+            } catch (e: Throwable) {
+                context.logCrash("openFile", e)
+                editorError = "פתיחת הקובץ נכשלה: ${e.message ?: e::class.simpleName}"
             }
-            val text = withContext(Dispatchers.IO) { entry.file.readText() }
-            openedFile = entry.file
-            editorText = text
-            editorDirty = false
         }
     }
 
@@ -138,10 +159,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveEditorFile(onSaved: () -> Unit = {}) {
         val file = openedFile ?: return
+        val context = getApplication<Application>()
         viewModelScope.launch {
-            withContext(Dispatchers.IO) { file.writeText(editorText) }
-            editorDirty = false
-            onSaved()
+            try {
+                withContext(Dispatchers.IO) { file.writeText(editorText) }
+                editorDirty = false
+                onSaved()
+            } catch (e: Throwable) {
+                context.logCrash("saveEditorFile", e)
+                editorError = "השמירה נכשלה: ${e.message ?: e::class.simpleName}"
+            }
         }
     }
 
@@ -169,8 +196,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     } ?: throw ApkDecompileException("לא ניתן לכתוב ליעד השמירה שנבחר")
                 }
                 exportState = ExportState.Done
-            } catch (e: Exception) {
-                exportState = ExportState.Error(e.message ?: "יצירת הקובץ המקווץ נכשלה")
+            } catch (e: Throwable) {
+                context.logCrash("exportTo", e)
+                exportState = ExportState.Error(e.message ?: "יצירת הקובץ המקווץ נכשלה (${e::class.simpleName})")
             }
         }
     }
